@@ -1,0 +1,16 @@
+[package]
+name = "isolated"
+version = "0.1.0"
+authors = ["Hannes Karppila <hannes@dento.fi>"]
+
+description = "Child-process container for Linux hosts"
+keywords = ["linux", "containers", "namespaces", "process"]
+categories = ["os::linux-apis"]
+license = "MIT"
+
+edition = "2018"
+
+[dependencies]
+nix = "0.21.0"
+backtrace = "0.3.60"
+tempfile = "3.2.0"
