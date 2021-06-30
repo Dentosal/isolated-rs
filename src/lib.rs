@@ -5,7 +5,7 @@ use backtrace::Backtrace;
 use nix::fcntl::OFlag;
 use nix::sched::{clone, CloneFlags};
 use nix::sys::signal::Signal;
-use nix::sys::wait::{waitpid, WaitStatus};
+use nix::sys::wait::waitpid;
 use nix::unistd::{execv, mkdir, Pid};
 
 use tempfile::{tempdir, TempDir};
@@ -16,6 +16,7 @@ use command::DiskWritePolicy;
 
 // Re-exports
 pub use self::command::Command;
+pub use nix::sys::wait::WaitStatus;
 
 /// Wrapper for automatically closing a raw file
 /// when it goes out of scope
