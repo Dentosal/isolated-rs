@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&writedir)?;
 
     let mut child =
-        isolated::Process::spawn("/bin/sh", &["sh"], &[rootfs], Some(writedir), None, None)?;
+        isolated::Process::spawn("/bin/sh", &[], &[rootfs], Some(writedir), None, None)?;
     child.wait()?;
     Ok(())
 }

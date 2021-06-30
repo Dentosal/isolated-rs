@@ -168,10 +168,12 @@ impl Process {
         create_overlayfs(&mountpoint, &workdir, &layers, &writedir);
 
         let path = CString::new(path.as_bytes().to_vec()).expect("Nul byte in target");
-        let args: Vec<CString> = args
-            .iter()
-            .map(|arg| CString::new(arg.as_bytes().to_vec()).expect("Nul byte in an argument"))
-            .collect();
+        let args: Vec<CString> =
+            std::iter::once(path.clone())
+                .chain(args.iter().map(|arg| {
+                    CString::new(arg.as_bytes().to_vec()).expect("Nul byte in an argument")
+                }))
+                .collect();
 
         // A more full-featured implementation might end up setting an anonymous pipe
         // between the parent and this child; however, we simply print the error and
