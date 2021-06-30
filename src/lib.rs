@@ -78,12 +78,7 @@ fn overlayfs_escape_path<P: Into<String>>(path: P) -> String {
         .replace(",", "\\,")
 }
 
-fn create_overlayfs(
-    mountpoint: &Path,
-    workdir: &Path,
-    layers: &[PathBuf],
-    writedir: &Option<PathBuf>,
-) {
+fn create_overlayfs(mountpoint: &Path, workdir: &Path, layers: &[PathBuf], writedir: &Path) {
     use nix::mount::{mount, MsFlags};
 
     let mut options = format!(
@@ -99,12 +94,10 @@ fn create_overlayfs(
             .join(":")
     ));
 
-    if let Some(wd) = writedir {
-        options.push_str(&format!(
-            ",upperdir={}",
-            overlayfs_escape_path(wd.to_str().expect("TODO: utf8 error"))
-        ));
-    }
+    options.push_str(&format!(
+        ",upperdir={}",
+        overlayfs_escape_path(writedir.to_str().expect("TODO: utf8 error"))
+    ));
 
     mount(
         Some("overlay"),
@@ -154,13 +147,12 @@ impl Process {
         let workdir = tmp.path().join("work");
 
         let writedir = match command.disk_write {
-            DiskWritePolicy::ReadOnly => None,
             DiskWritePolicy::TempDir => {
                 let d = tmp.path().join("write");
                 std::fs::create_dir(&d).expect("Creating temp writedir failed");
-                Some(d)
+                d
             }
-            DiskWritePolicy::WriteDir(d) => Some(d),
+            DiskWritePolicy::WriteDir(d) => d,
         };
 
         std::fs::create_dir(&mountpoint).expect("Creating temp mountpoint failed");

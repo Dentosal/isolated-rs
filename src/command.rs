@@ -7,8 +7,6 @@ use crate::Process;
 
 #[derive(Debug, Clone)]
 pub(crate) enum DiskWritePolicy {
-    /// No write access to any filesystem parts
-    ReadOnly,
     /// Write to temporary directory, automatically deleted when dropping child
     TempDir,
     /// Write modifications to the file system done by the application to this directory
@@ -45,7 +43,7 @@ impl Command {
             path: path.clone(),
             args: vec![path],
             layers: vec![root_fs.as_ref().to_owned()],
-            disk_write: DiskWritePolicy::ReadOnly,
+            disk_write: DiskWritePolicy::TempDir,
             pre_pivot: Vec::new(),
             pre_exec: Vec::new(),
         }
