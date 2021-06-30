@@ -1,6 +1,6 @@
 [package]
 name = "isolated"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Hannes Karppila <hannes@dento.fi>"]
 
 description = "Child-process container for Linux hosts"
