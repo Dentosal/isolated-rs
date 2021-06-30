@@ -8,8 +8,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     std::fs::create_dir_all(&writedir)?;
 
-    let mut child =
-        isolated::Process::spawn("/bin/sh", &[], &[rootfs], Some(writedir), None, None)?;
+    let mut child = isolated::Command::new(rootfs, "/bin/sh")
+        .disk_write_to(writedir)
+        .spawn()?;
+
     child.wait()?;
     Ok(())
 }

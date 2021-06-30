@@ -1,4 +1,3 @@
-use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
 use backtrace::Backtrace;
@@ -10,6 +9,13 @@ use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{execv, mkdir, Pid};
 
 use tempfile::{tempdir, TempDir};
+
+mod command;
+
+use command::DiskWritePolicy;
+
+// Re-exports
+pub use self::command::Command;
 
 /// Wrapper for automatically closing a raw file
 /// when it goes out of scope
@@ -71,24 +77,33 @@ fn overlayfs_escape_path<P: Into<String>>(path: P) -> String {
         .replace(",", "\\,")
 }
 
-fn create_overlayfs<L: AsRef<Path>>(
+fn create_overlayfs(
     mountpoint: &Path,
     workdir: &Path,
-    layers: &[L],
-    writedir: &Path,
+    layers: &[PathBuf],
+    writedir: &Option<PathBuf>,
 ) {
     use nix::mount::{mount, MsFlags};
 
-    let options = format!(
-        "workdir={},lowerdir={},upperdir={}",
-        overlayfs_escape_path(workdir.to_str().expect("TODO: utf8 error")),
+    let mut options = format!(
+        "workdir={}",
+        overlayfs_escape_path(workdir.to_str().expect("TODO: utf8 error"))
+    );
+    options.push_str(&format!(
+        ",lowerdir={}",
         layers
             .iter()
-            .map(|p| overlayfs_escape_path(p.as_ref().to_str().expect("TODO: utf8 error")))
+            .map(|p| overlayfs_escape_path(p.to_str().expect("TODO: utf8 error")))
             .collect::<Vec<_>>()
-            .join(":"),
-        overlayfs_escape_path(writedir.to_str().expect("TODO: utf8 error"))
-    );
+            .join(":")
+    ));
+
+    if let Some(wd) = writedir {
+        options.push_str(&format!(
+            ",upperdir={}",
+            overlayfs_escape_path(wd.to_str().expect("TODO: utf8 error"))
+        ));
+    }
 
     mount(
         Some("overlay"),
@@ -131,49 +146,26 @@ pub struct Process {
 }
 
 impl Process {
-    /// Spawns a new process from `path` with `args`.
-    /// `layers` specify overlayfs layers from outermost to innermost,
-    /// usually `[rootfs, appdir]` where rootfs contains a linux root
-    /// file system like Alpine minirootfs, and `appdir` is the directory
-    /// where the application binary is located. All of the layers are
-    /// overlayed on the root of the container file system.
-    /// `writedir` is a directory containing modifications to the file system
-    /// done by the application. If it is `None`, then a temporary directory
-    /// is used instead.
-    ///
-    /// `pre_exec`, if given, is a closure to be execute after for
-    ///
-    /// TODO: Document restrictions
-    pub fn spawn<L: AsRef<Path>, W: AsRef<Path>>(
-        path: &str,
-        args: &[&str],
-        layers: &[L],
-        writedir: Option<W>,
-        pre_pivot: Option<fn() -> nix::Result<()>>,
-        pre_exec: Option<fn() -> nix::Result<()>>,
-    ) -> nix::Result<Process> {
+    /// Spawns a new process as specified by command.
+    pub fn spawn(command: Command) -> nix::Result<Process> {
         let tmp = tempdir().expect("tempdir creation failed");
         let mountpoint = tmp.path().join("mount");
         let workdir = tmp.path().join("work");
 
-        let writedir: PathBuf = writedir.map(|d| d.as_ref().to_owned()).unwrap_or_else(|| {
-            let d = tmp.path().join("write");
-            std::fs::create_dir(&d).expect("Creating temp writedir failed");
-            d
-        });
+        let writedir = match command.disk_write {
+            DiskWritePolicy::ReadOnly => None,
+            DiskWritePolicy::TempDir => {
+                let d = tmp.path().join("write");
+                std::fs::create_dir(&d).expect("Creating temp writedir failed");
+                Some(d)
+            }
+            DiskWritePolicy::WriteDir(d) => Some(d),
+        };
 
         std::fs::create_dir(&mountpoint).expect("Creating temp mountpoint failed");
         std::fs::create_dir(&workdir).expect("Creating temp workdir failed");
 
-        create_overlayfs(&mountpoint, &workdir, &layers, &writedir);
-
-        let path = CString::new(path.as_bytes().to_vec()).expect("Nul byte in target");
-        let args: Vec<CString> =
-            std::iter::once(path.clone())
-                .chain(args.iter().map(|arg| {
-                    CString::new(arg.as_bytes().to_vec()).expect("Nul byte in an argument")
-                }))
-                .collect();
+        create_overlayfs(&mountpoint, &workdir, &command.layers, &writedir);
 
         // A more full-featured implementation might end up setting an anonymous pipe
         // between the parent and this child; however, we simply print the error and
@@ -187,6 +179,9 @@ impl Process {
             std::process::exit(1);
         }));
 
+        let path = command.path;
+        let args = command.args;
+
         let mut stack = [0; 4096];
         let id = clone(
             Box::new(move || {
@@ -195,17 +190,17 @@ impl Process {
                 // * If the code panics, it causes a segfault after printing the panic message
 
                 // Argument callback
-                if let Some(f) = &pre_pivot {
-                    f().expect("pre_pivot failed");
-                }
+                // if let Some(f) = pre_pivot.take() {
+                //     f().expect("pre_pivot failed");
+                // }
 
                 // Do process setup before exec
                 setup_rootfs(&mountpoint);
 
                 // Argument callback
-                if let Some(f) = &pre_exec {
-                    f().expect("pre_exec failed");
-                }
+                // if let Some(f) = pre_exec.take() {
+                //     f().expect("pre_exec failed");
+                // }
 
                 // Change into the next process
                 execv(path.as_c_str(), &args).expect("execv failed");
